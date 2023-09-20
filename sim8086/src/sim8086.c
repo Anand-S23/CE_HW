@@ -50,44 +50,70 @@ void print_bits(u8 n)
     for (int i = 7; i >= 0; i--) putchar('0' + ((n >> i) & 1));
 }
 
+void decode_immediate_to_reg(u8 *data)
+{
+    // int opcode = data[0] >> 4;
+    int w = (data[0] >> 3) & 1;
+    int reg = data[0] & 0b111;
+
+    assert(reg < REG_ENCODING_MAX);
+
+    int mov_val = w ? ((u16)data[0] << 8) | data[1] : data[0];
+    const char *dst_reg = reg_encoding_values[reg + WIDE_START * w];
+
+    printf("mov %s, %d\n", dst_reg, mov_val);
+}
+
+void decode_rm_to_reg(u8 *data)
+{
+    // int opcode = data[0] >> 2;
+    int dw = data[0] & 0b11;
+    int d = dw >> 1;
+    int w = dw & 1;
+
+    // int mod = data[1] >> 6;
+    int reg = (data[1] >> 3) & 0b111;
+    int rm = data[1] & 0b111;
+
+    assert(reg < REG_ENCODING_MAX && rm < REG_ENCODING_MAX);
+
+    int wide_mod = (w == 1) ? WIDE_START : 0;
+    const char *dst_reg, *src_reg;
+    if (d) 
+    {
+        dst_reg = reg_encoding_values[reg + wide_mod];
+        src_reg = reg_encoding_values[rm + wide_mod];
+    }
+    else
+    {
+        dst_reg = reg_encoding_values[rm + wide_mod];
+        src_reg = reg_encoding_values[reg + wide_mod];
+    }
+
+    printf("mov %s, %s\n", dst_reg, src_reg);
+}
+
 void decode_instructions(binary_file_t *bf)
 {
     printf("bits 16\n\n");
 
     for (int i = 0; i < bf->size; i += 2)
     {
-        int opcode = bf->data[i] >> 2; // ABCDEFGH >> 2 = 00ABCDEF
-        int dw = bf->data[i] & 0b00000011;
-        int d = dw >> 1;
-        int w = dw & 1;
-        assert(opcode == 0b100010 && "Somehow not a mov instruction");
-
-        int mod = bf->data[i + 1] >> 6;
-        int reg = (bf->data[i + 1] >> 3) & 0b00000111;
-        int rm = bf->data[i + 1] & 0b00000111;
-        assert(mod == 0b11 && "Somehow not a register to register mov instruction");
-
-        assert(reg < REG_ENCODING_MAX && rm < REG_ENCODING_MAX);
-
-        int wide_mod = (w == 1) ? WIDE_START : 0;
-        const char *dst_reg, *src_reg;
-        if (d) 
+        int opcode = bf->data[i] >> 4;
+        if (opcode == 0b1011)
         {
-            dst_reg = reg_encoding_values[reg + wide_mod];
-            src_reg = reg_encoding_values[rm + wide_mod];
-        }
-        else
-        {
-            dst_reg = reg_encoding_values[rm + wide_mod];
-            src_reg = reg_encoding_values[reg + wide_mod];
+            decode_immediate_to_reg(bf->data + i);
+            continue;
         }
 
-#if DEBUG
-        printf("Opcode: %d, DW: %d\n", opcode, dw);
-        print_bits(bf->data[i + 1]);
-        printf(" -> mod: %d, reg: %d, r/m: %d\n", mod, reg, rm);
-#endif
-        printf("mov %s, %s\n", dst_reg, src_reg);
+        opcode = bf->data[i] >> 2;
+        if (opcode == 0b100010)
+        {
+            int w = (bf->data[i] >> 3) & 1;
+            decode_rm_to_reg(bf->data + i);
+            if (w) i += 1;
+            continue;
+        }
     }
 }
 
